@@ -1,5 +1,7 @@
 *.csv
 *.pdf
 *.pyc
+*.env
 /venv
 /output
+__pycache__/
