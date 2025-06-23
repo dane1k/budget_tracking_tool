@@ -1,11 +1,11 @@
-import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 import base64
 from datetime import datetime
 import matplotlib.pyplot as plt
 from io import BytesIO
-import logging
 import os
+import logging
+import pandas as pd
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 def generate_html_report(df: pd.DataFrame, output_path: str = "output/report.html") -> None:
     try:
         income = df[df["amount"] > 0]
-        expenses = df[df["amount"] < 0].copy()
+        expenses = df[df["amount"] < 0]
         
         total_income = income["amount"].sum()
-        total_expenses = expenses["amount"].sum() * -1
+        total_expenses = expenses["amount"].sum() * -1 
         net_savings = total_income - total_expenses
 
         if not expenses.empty:
@@ -65,14 +65,15 @@ def generate_html_report(df: pd.DataFrame, output_path: str = "output/report.htm
             has_expenses=not expenses.empty
         )
 
+        # Сохранение отчета
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w") as f:
             f.write(html_output)
             
-        logger.info(f"Report generated at {output_path}")
+        logger.info(f"Report generated: {output_path}")
 
     except Exception as e:
-        logger.error(f"Report generation error: {str(e)}")
+        logger.error(f"Error generating report: {e}")
         raise
 
 def generate_pie_chart(expenses_df: pd.DataFrame) -> str:
@@ -80,7 +81,7 @@ def generate_pie_chart(expenses_df: pd.DataFrame) -> str:
         plt.figure(figsize=(8, 8))
         expenses_df.groupby("category")["amount"].sum().plot(
             kind="pie",
-            autopct=lambda p: f"{p:.1f}% (${p/100*expenses_df['amount'].sum():,.0f})",
+            autopct="%1.1f%%",
             startangle=90,
             colors=["#4361ee", "#3f37c9", "#4895ef", "#4cc9f0", "#f72585"],
             wedgeprops={"linewidth": 1, "edgecolor": "white"},
@@ -102,5 +103,5 @@ def generate_pie_chart(expenses_df: pd.DataFrame) -> str:
         
         return f"data:image/png;base64,{base64.b64encode(buffer.read()).decode()}"
     except Exception as e:
-        logger.error(f"Chart error: {str(e)}")
+        logger.error(f"Error generating chart: {e}")
         return None
