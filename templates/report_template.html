@@ -178,7 +178,7 @@
     <header>
         <div class="container">
             <h1>Budget Report</h1>
-            <p class="subtitle">Generated on 2025-06-23</p>
+            <p class="subtitle">Generated on {{ date }}</p>
         </div>
     </header>
     
@@ -187,7 +187,7 @@
             <div class="card">
                 <div class="summary-item">
                     <h3>Total Income</h3>
-                    <div class="summary-value income">$11,312.35</div>
+                    <div class="summary-value income">{{ total_income }}</div>
                     <p>All incoming transactions</p>
                 </div>
             </div>
@@ -195,7 +195,7 @@
             <div class="card">
                 <div class="summary-item">
                     <h3>Total Expenses</h3>
-                    <div class="summary-value expenses">$0.00</div>
+                    <div class="summary-value expenses">{{ total_expenses }}</div>
                     <p>All outgoing transactions</p>
                 </div>
             </div>
@@ -203,7 +203,7 @@
             <div class="card">
                 <div class="summary-item">
                     <h3>Net Savings</h3>
-                    <div class="summary-value savings">$11,312.35</div>
+                    <div class="summary-value savings">{{ net_savings }}</div>
                     <p>Income minus expenses</p>
                 </div>
             </div>
@@ -211,20 +211,35 @@
         
         <div class="card">
             <h2 class="card-title">Spending by Category</h2>
-            
+            {% for category in spending_by_category %}
+            <div class="progress-container">
+                <div class="progress-label">
+                    <span>{{ category.name }}</span>
+                    <span>{{ category.amount }} ({{ category.percentage }}%)</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ category.percentage }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
         </div>
         
         <div class="card">
             <h2 class="card-title">Top 5 Expenses</h2>
             <ul class="top-expenses">
-                
+                {% for expense in top_spending %}
+                <li>
+                    <span>{{ expense.description }}</span>
+                    <span class="expense-amount">{{ expense.amount }}</span>
+                </li>
+                {% endfor %}
             </ul>
         </div>
         
         <div class="card">
             <h2 class="card-title">Spending Distribution</h2>
             <div class="chart-container">
-                <img src="None" alt="Spending by Category">
+                <img src="{{ pie_chart }}" alt="Spending by Category">
             </div>
         </div>
     </div>
