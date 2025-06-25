@@ -65,7 +65,6 @@ def generate_html_report(df: pd.DataFrame, output_path: str = "output/report.htm
             has_expenses=not expenses.empty
         )
 
-        # Сохранение отчета
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w") as f:
             f.write(html_output)
