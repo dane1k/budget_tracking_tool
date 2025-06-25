@@ -2,6 +2,8 @@
 *.pdf
 *.pyc
 *.env
+*.xlsx
+expenses.png
 /venv
 /output
 __pycache__/
