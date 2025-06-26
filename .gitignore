@@ -1,9 +1,9 @@
 *.csv
 *.pdf
-*.pyc
 *.env
 *.xlsx
 expenses.png
+pdf_parser.cpython-312.pyc
 /venv
 /output
 __pycache__/
