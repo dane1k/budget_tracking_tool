@@ -87,16 +87,6 @@ Total: $206.65
 
 ---
 
-## Roadmap / TODO
-
-- [ ] Add multi-language support
-- [ ] GUI or web interface
-- [ ] Graphs for monthly spending
-- [ ] Save user preferences
-- [ ] Import multiple CSVs at once
-
----
-
 ## License
 
 MIT License — feel free to fork, use, and contribute!
