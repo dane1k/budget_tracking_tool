@@ -42,6 +42,14 @@ def parse_transactions(text, year):
     df = pd.DataFrame(transactions, columns=["date", "description", "amount"])
     return df
 
+def ask_for_date(prompt_text):
+    while True:
+        date_str = input(prompt_text)
+        try:
+            return pd.to_datetime(date_str, format="%Y-%m-%d")
+        except ValueError:
+            print("invalid format, please use YYYY-MM-DD (e.g. 2025-05-01)")
+
 def build_prompt(df):
     df_small = df.tail(50)
     table_md = df_small.to_markdown(index=False)
@@ -123,30 +131,37 @@ def main():
     if not os.path.exists(file_path):
         print(f"file not found {file_path}")
         return
+
     print(f"extracting text from {file_path}")
     text = extract_text_from_pdf(file_path)
+
     YEAR = 2025
+
     print("parsing transactions from text")
     df = parse_transactions(text, YEAR)
     print(f"found transactions {len(df)}")
+
     if df.empty:
         print("no transactions found please check the pdf format")
         return
-    input_start = input("start date (yyyy-mm-dd), e.g. 2025-05-01: ")
-    input_end = input("end date (yyyy-mm-dd), e.g. 2025-06-09: ")
-    try:
-        start_date = pd.to_datetime(input_start)
-        end_date = pd.to_datetime(input_end)
-    except Exception:
-        print("invalid date format")
+
+    start_date = ask_for_date("start date (yyyy-mm-dd), e.g. 2025-05-01: ")
+    end_date = ask_for_date("end date (yyyy-mm-dd), e.g. 2025-06-09: ")
+
+    if end_date < start_date:
+        print("end date cannot be before start date")
         return
+
     df_filtered = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
     print(f"filtered transactions {len(df_filtered)}")
+
     if df_filtered.empty:
         print("no transactions found in this period")
         return
+
     print("sending data to openai for analysis")
     response_text = ask_openai_for_analysis(df_filtered)
+
     print("parsing openai response")
     try:
         data = parse_openai_response(response_text)
@@ -154,6 +169,7 @@ def main():
         print("failed to parse json from openai response", e)
         print("raw response", response_text)
         return
+
     print("saving data to excel")
     save_to_excel(data)
     print("done excel report saved as financial_report.xlsx")
