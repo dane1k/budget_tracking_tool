@@ -54,25 +54,29 @@ given the following transactions table in markdown
 
 tasks
 1) assign each transaction a category (e.g. food, salary, transport, housing, fitness, gaming, technology, deposit, finance)
-2) provide a json output with
-   - transactions: list of transactions with added category field
-   - summary: total income and expenses per category
+2) return a JSON with:
+   - incomes: list of income transactions (amount > 0) with category
+   - expenses: list of expense transactions (amount < 0) with category
+   - summary: dictionary where each category has income and expense totals
 
-return only json with the structure like this
-
+format:
 {{
-  "transactions": [
-    {{"date": "2025-05-01", "description": "pak n save", "amount": -50.00, "category": "food"}},
-    ...
+  "incomes": [
+    {{"date": "2025-05-01", "description": "salary", "amount": 2000.00, "category": "salary"}}
+  ],
+  "expenses": [
+    {{"date": "2025-05-02", "description": "pak n save", "amount": -50.00, "category": "food"}}
   ],
   "summary": {{
-    "food": {{"income": 0, "expense": 50.00}},
     "salary": {{"income": 2000.00, "expense": 0}},
-    ...
+    "food": {{"income": 0, "expense": 50.00}}
   }}
 }}
+
+return only valid JSON without explanation or comments
 """
     return prompt
+
 
 def ask_openai_for_analysis(df):
     prompt = build_prompt(df)
@@ -89,20 +93,30 @@ def parse_openai_response(text):
     return json.loads(json_str)
 
 def save_to_excel(data, filename="financial_report.xlsx"):
-    df_transactions = pd.DataFrame(data["transactions"])
-    df_summary = pd.DataFrame(data["summary"]).T
+    df_incomes = pd.DataFrame(data.get("incomes", []))
+    df_expenses = pd.DataFrame(data.get("expenses", []))
+    df_summary = pd.DataFrame(data.get("summary", {})).T
+
     with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
-        df_transactions.to_excel(writer, sheet_name="transactions", index=False)
-        df_summary.to_excel(writer, sheet_name="summary")
-        workbook = writer.book
-        worksheet = writer.sheets["summary"]
-        plt.figure(figsize=(8,5))
-        df_summary["expense"].plot(kind="bar", color="red", title="expenses by category")
-        plt.ylabel("amount")
-        plt.tight_layout()
-        plt.savefig("expenses.png")
-        plt.close()
-        worksheet.insert_image("d2", "expenses.png")
+        if not df_incomes.empty:
+            df_incomes.to_excel(writer, sheet_name="incomes", index=False)
+        if not df_expenses.empty:
+            df_expenses.to_excel(writer, sheet_name="expenses", index=False)
+        if not df_summary.empty:
+            df_summary.to_excel(writer, sheet_name="summary")
+
+            workbook = writer.book
+            worksheet = writer.sheets["summary"]
+
+            plt.figure(figsize=(8,5))
+            df_summary["expense"].plot(kind="bar", color="tomato", title="expenses by category")
+            plt.ylabel("amount")
+            plt.tight_layout()
+            plt.savefig("expenses.png")
+            plt.close()
+
+            worksheet.insert_image("D2", "expenses.png")
+
 
 def main():
     file_path = "./data/bank-statement.pdf"
@@ -143,8 +157,7 @@ def main():
     print("saving data to excel")
     save_to_excel(data)
     print("done excel report saved as financial_report.xlsx")
-    # optionally open the file
-    # webbrowser.open(os.path.abspath("financial_report.xlsx"))
+    webbrowser.open(os.path.abspath("financial_report.xlsx"))
 
 if __name__ == "__main__":
     main()
