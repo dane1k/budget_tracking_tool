@@ -3,19 +3,25 @@ import re
 import json
 import pdfplumber
 import pandas as pd
+import matplotlib.pyplot as plt
 from openai import OpenAI
+import webbrowser
 from dotenv import load_dotenv
+
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise ValueError("set OPENAI_API_KEY in your .env")
+    raise ValueError("set OPENAI_API_KEY environment variable")
 
 client = OpenAI(api_key=api_key)
 
 def extract_text_from_pdf(file_path):
     with pdfplumber.open(file_path) as pdf:
-        return "\n".join(page.extract_text() for page in pdf.pages)
+        full_text = ""
+        for page in pdf.pages:
+            full_text += page.extract_text() + "\n"
+    return full_text
 
 def parse_transactions(text, year):
     lines = text.splitlines()
@@ -24,47 +30,63 @@ def parse_transactions(text, year):
     for line in lines:
         match = pattern.search(line)
         if match:
-            date_str, description, amount_str = match.groups()
+            date_str = match.group(1)
+            description = match.group(2).strip()
+            amount_str = match.group(3).replace("$", "").replace(",", "")
             try:
-                amount = float(amount_str.replace("$", "").replace(",", ""))
+                amount = float(amount_str)
                 date = pd.to_datetime(f"{date_str} {year}", format="%d %b %Y")
-                transactions.append([date.strftime("%Y-%m-%d"), description.strip(), amount])
-            except:
+            except Exception:
                 continue
-    return pd.DataFrame(transactions, columns=["date", "description", "amount"])
+            transactions.append([date, description, amount])
+    df = pd.DataFrame(transactions, columns=["date", "description", "amount"])
+    return df
+
+def ask_for_date(prompt_text):
+    while True:
+        date_str = input(prompt_text)
+        try:
+            return pd.to_datetime(date_str, format="%Y-%m-%d")
+        except ValueError:
+            print("invalid format, please use YYYY-MM-DD (e.g. 2025-05-01)")
 
 def build_prompt(df):
-    table = df.to_markdown(index=False)
+    df_small = df.tail(50)
+    table_md = df_small.to_markdown(index=False)
     prompt = f"""
-You are a financial assistant.
+you are a financial analyst
 
-Here's a table of bank transactions:
+given the following transactions table in markdown
 
-{table}
+{table_md}
 
-Tasks:
-1. Automatically assign a category to each transaction based on its description. Make up reasonable categories (food, rent, transport, subscriptions, etc.)
-2. For each category, calculate total expenses (amount < 0) grouped by month (format YYYY-MM)
-3. Return a valid JSON in this format:
+tasks
+1) assign each transaction a category (e.g. food, salary, transport, housing, fitness, gaming, technology, deposit, finance)
+2) return a JSON with:
+   - incomes: list of income transactions (amount > 0) with category
+   - expenses: list of expense transactions (amount < 0) with category
+   - summary: dictionary where each category has income and expense totals
 
+format:
 {{
-  "food": {{
-    "2025-03": 123.45,
-    "2025-04": 234.56
-  }},
-  "subscriptions": {{
-    "2025-03": 12.99
+  "incomes": [
+    {{"date": "2025-05-01", "description": "salary", "amount": 2000.00, "category": "salary"}}
+  ],
+  "expenses": [
+    {{"date": "2025-05-02", "description": "pak n save", "amount": -50.00, "category": "food"}}
+  ],
+  "summary": {{
+    "salary": {{"income": 2000.00, "expense": 0}},
+    "food": {{"income": 0, "expense": 50.00}}
   }}
 }}
 
-Notes:
-- Only include negative amounts (expenses)
-- Only include months/categories with expenses
-- Return valid JSON only, no explanation or formatting
+return only valid JSON without explanation or comments
 """
     return prompt
 
-def ask_openai(df):
+
+def ask_openai_for_analysis(df):
     prompt = build_prompt(df)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -72,46 +94,86 @@ def ask_openai(df):
     )
     return response.choices[0].message.content
 
-def parse_response(text):
-    try:
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        return json.loads(text[start:end])
-    except Exception as e:
-        print("⚠️ Failed to parse JSON:", e)
-        print("Raw GPT response:\n", text)
-        return {}
+def parse_openai_response(text):
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    json_str = text[start:end]
+    return json.loads(json_str)
 
-def save_to_excel(data, filename="annual_expenses.xlsx"):
-    if not data:
-        print("⚠️ No data to write.")
-        return
-    df = pd.DataFrame(data).fillna(0).T
-    df.index.name = "category"
-    df = df.sort_index()
-    df = df.reindex(sorted(df.columns), axis=1)
-    df.to_excel(filename)
-    print(f"✅ Excel report saved as {filename}")
+def save_to_excel(data, filename="financial_report.xlsx"):
+    df_incomes = pd.DataFrame(data.get("incomes", []))
+    df_expenses = pd.DataFrame(data.get("expenses", []))
+    df_summary = pd.DataFrame(data.get("summary", {})).T
+
+    with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
+        if not df_incomes.empty:
+            df_incomes.to_excel(writer, sheet_name="incomes", index=False)
+        if not df_expenses.empty:
+            df_expenses.to_excel(writer, sheet_name="expenses", index=False)
+        if not df_summary.empty:
+            df_summary.to_excel(writer, sheet_name="summary")
+
+            workbook = writer.book
+            worksheet = writer.sheets["summary"]
+
+            plt.figure(figsize=(8,5))
+            df_summary["expense"].plot(kind="bar", color="tomato", title="expenses by category")
+            plt.ylabel("amount")
+            plt.tight_layout()
+            plt.savefig("expenses.png")
+            plt.close()
+
+            worksheet.insert_image("D2", "expenses.png")
+
 
 def main():
     file_path = "./data/bank-statement.pdf"
     if not os.path.exists(file_path):
-        print("❌ File not found:", file_path)
+        print(f"file not found {file_path}")
         return
-    print("📄 Extracting text from PDF...")
+
+    print(f"extracting text from {file_path}")
     text = extract_text_from_pdf(file_path)
-    print("🔍 Parsing transactions...")
-    df = parse_transactions(text, year=2025)
-    print(f"📊 Parsed {len(df)} transactions.")
+
+    YEAR = 2025
+
+    print("parsing transactions from text")
+    df = parse_transactions(text, YEAR)
+    print(f"found transactions {len(df)}")
+
     if df.empty:
-        print("⚠️ No transactions found.")
+        print("no transactions found please check the pdf format")
         return
-    print("🤖 Sending to OpenAI for analysis...")
-    gpt_response = ask_openai(df)
-    print("📥 Parsing GPT response...")
-    data = parse_response(gpt_response)
-    print("💾 Saving to Excel...")
+
+    start_date = ask_for_date("start date (yyyy-mm-dd), e.g. 2025-05-01: ")
+    end_date = ask_for_date("end date (yyyy-mm-dd), e.g. 2025-06-09: ")
+
+    if end_date < start_date:
+        print("end date cannot be before start date")
+        return
+
+    df_filtered = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+    print(f"filtered transactions {len(df_filtered)}")
+
+    if df_filtered.empty:
+        print("no transactions found in this period")
+        return
+
+    print("sending data to openai for analysis")
+    response_text = ask_openai_for_analysis(df_filtered)
+
+    print("parsing openai response")
+    try:
+        data = parse_openai_response(response_text)
+    except Exception as e:
+        print("failed to parse json from openai response", e)
+        print("raw response", response_text)
+        return
+
+    print("saving data to excel")
     save_to_excel(data)
+    print("done excel report saved as financial_report.xlsx")
+    webbrowser.open(os.path.abspath("financial_report.xlsx"))
 
 if __name__ == "__main__":
     main()
