@@ -75,7 +75,6 @@ Do not explain anything. Return only valid JSON with categories as top-level key
 """
     return prompt
 
-
 def ask_openai_for_analysis(df):
     prompt = build_prompt(df)
     response = client.chat.completions.create(
