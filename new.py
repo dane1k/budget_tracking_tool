@@ -42,39 +42,39 @@ def parse_transactions(text, year):
     return df
 
 def build_prompt(df):
-    df_small = df.tail(50)
-    table_md = df_small.to_markdown(index=False)
+    table_md = df.to_markdown(index=False)
     prompt = f"""
-you are a financial analyst
+You are a financial assistant
 
-given the following transactions table in markdown
+Here is a table of financial transactions with the following columns:
+- date (format YYYY-MM-DD)
+- description
+- amount (positive = income, negative = expense)
 
 {table_md}
 
-tasks
-1) assign each transaction a category (e.g. food, salary, transport, housing, fitness, gaming, technology, deposit, finance)
-2) return a JSON with:
-   - incomes: list of income transactions (amount > 0) with category
-   - expenses: list of expense transactions (amount < 0) with category
-   - summary: dictionary where each category has income and expense totals
+Instructions:
+1. Group transactions into categories you think are appropriate (e.g., food, transport, subscriptions, etc.).
+2. For each category, sum the expenses (amount < 0) per month.
+3. Output the result as a JSON with this format:
 
-format:
 {{
-  "incomes": [
-    {{"date": "2025-05-01", "description": "salary", "amount": 2000.00, "category": "salary"}}
-  ],
-  "expenses": [
-    {{"date": "2025-05-02", "description": "pak n save", "amount": -50.00, "category": "food"}}
-  ],
-  "summary": {{
-    "salary": {{"income": 2000.00, "expense": 0}},
-    "food": {{"income": 0, "expense": 50.00}}
+  "Food": {{
+    "2025-03": 123.45,
+    "2025-04": 99.99,
+    "2025-05": 210.00,
+    "2025-06": 0.00
+  }},
+  "Transport": {{
+    "2025-03": 20.00,
+    ...
   }}
 }}
 
-return only valid JSON without explanation or comments
+Do not explain anything. Return only valid JSON with categories as top-level keys and months as subkeys.
 """
     return prompt
+
 
 def ask_openai_for_analysis(df):
     prompt = build_prompt(df)
@@ -95,17 +95,6 @@ def save_to_excel(data, filename="financial_report.xlsx"):
     df_expenses = pd.DataFrame(data.get("expenses", []))
     df_summary = pd.DataFrame(data.get("summary", {})).T
 
-    df_all = pd.concat([df_incomes, df_expenses])
-    df_all["date"] = pd.to_datetime(df_all["date"])
-    df_all["month"] = df_all["date"].dt.to_period("M")
-
-    monthly = df_all.groupby(["month", "category"]).agg(
-        income=pd.NamedAgg(column="amount", aggfunc=lambda x: x[x > 0].sum()),
-        expense=pd.NamedAgg(column="amount", aggfunc=lambda x: -x[x < 0].sum())
-    ).fillna(0).reset_index()
-
-    monthly_pivot = monthly.pivot_table(index="month", columns="category", values=["income", "expense"], fill_value=0)
-
     with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
         if not df_incomes.empty:
             df_incomes.to_excel(writer, sheet_name="incomes", index=False)
@@ -113,36 +102,46 @@ def save_to_excel(data, filename="financial_report.xlsx"):
             df_expenses.to_excel(writer, sheet_name="expenses", index=False)
         if not df_summary.empty:
             df_summary.to_excel(writer, sheet_name="summary")
-        if not monthly_pivot.empty:
-            monthly_pivot.to_excel(writer, sheet_name="monthly_summary")
 
             workbook = writer.book
-            worksheet = writer.sheets["monthly_summary"]
+            worksheet = writer.sheets["summary"]
 
-            plt.figure(figsize=(10, 6))
+            plt.figure(figsize=(8,5))
             df_summary["expense"].plot(kind="bar", color="tomato", title="expenses by category")
             plt.ylabel("amount")
             plt.tight_layout()
             plt.savefig("expenses.png")
             plt.close()
-            worksheet.insert_image("B2", "expenses.png")
+
+            worksheet.insert_image("D2", "expenses.png")
+
+        if not df_expenses.empty:
+            df_expenses["date"] = pd.to_datetime(df_expenses["date"])
+            df_expenses["month"] = df_expenses["date"].dt.strftime("%b")
+            pivot = df_expenses.pivot_table(index="category", columns="month", values="amount", aggfunc="sum", fill_value=0)
+            pivot = pivot.reindex(columns=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])
+            pivot.to_excel(writer, sheet_name="monthly_budget")
 
 def main():
     file_path = "./data/bank-statement.pdf"
     if not os.path.exists(file_path):
         print(f"file not found {file_path}")
         return
+
     print(f"extracting text from {file_path}")
     text = extract_text_from_pdf(file_path)
     YEAR = 2025
     print("parsing transactions from text")
     df = parse_transactions(text, YEAR)
     print(f"found transactions {len(df)}")
+
     if df.empty:
         print("no transactions found please check the pdf format")
         return
+
     print("sending data to openai for analysis")
     response_text = ask_openai_for_analysis(df)
+
     print("parsing openai response")
     try:
         data = parse_openai_response(response_text)
@@ -150,6 +149,7 @@ def main():
         print("failed to parse json from openai response", e)
         print("raw response", response_text)
         return
+
     print("saving data to excel")
     save_to_excel(data)
     print("done excel report saved as financial_report.xlsx")
